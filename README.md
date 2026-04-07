@@ -8,6 +8,16 @@ VNC Computer-Use CLI - control a remote desktop via VNC for AI computer-use agen
 pip install vnc-computer-use
 ```
 
+### Claude Code Skill
+
+To add VNC desktop control as a skill for [Claude Code](https://claude.ai/claude-code):
+
+```bash
+npx claude-code skills install EYHN/vnc
+```
+
+This installs the `/vnc` skill, which teaches Claude how to connect to VNC servers, take screenshots, click, type, and interact with remote desktops autonomously.
+
 ## Usage
 
 ### Connect to a VNC server
