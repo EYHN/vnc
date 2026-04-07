@@ -40,6 +40,19 @@ def session_log_file(session):
 # Threshold: texts shorter than this use keyPress; longer use paste()
 PASTE_THRESHOLD = 32
 
+# macOS-friendly key aliases → X11 keysym names understood by vncdotool
+KEY_ALIASES = {
+    "cmd": "lsuper",
+    "command": "lsuper",
+    "opt": "lalt",
+    "option": "lalt",
+    "ctrl": "lctrl",
+    "control": "lctrl",
+    "return": "enter",
+    "delete": "del",
+    "escape": "esc",
+}
+
 
 def _get_api_scale(width, height):
     """Calculate scale factor to fit image within Claude API limits.
@@ -77,6 +90,8 @@ class VNCController:
     def __init__(self, host, password=None, username=None, session=DEFAULT_SESSION):
         import vncdotool.api
         self._api = vncdotool.api
+        self._password = password
+        self._username = username
         self.client = self._api.connect(host, password=password, username=username)
         self.cursor_x = 0
         self.cursor_y = 0
@@ -96,6 +111,26 @@ class VNCController:
         except Exception:
             pass
 
+    def _reconnect(self):
+        """Reconnect VNC client after entering a bad state."""
+        print(f"[{self.session}] Reconnecting VNC...", file=sys.stderr)
+        try:
+            self.client.disconnect()
+        except Exception:
+            pass
+        self.client = self._api.connect(
+            self.host, password=self._password, username=self._username,
+        )
+        print(f"[{self.session}] VNC reconnected.", file=sys.stderr)
+
+    def _health_check(self):
+        """Quick probe to see if the VNC client is still responsive."""
+        try:
+            self.client.refreshScreen()
+            return True
+        except Exception:
+            return False
+
     def handle(self, request):
         action = request.get("action")
         with self._lock:
@@ -106,6 +141,14 @@ class VNCController:
                 return handler(request)
             except Exception as e:
                 traceback.print_exc(file=sys.stderr)
+                # Check if client entered a bad state; auto-reconnect if so
+                if not self._health_check():
+                    try:
+                        self._reconnect()
+                        return {"error": f"{e} (VNC client was in bad state — reconnected automatically. Please retry.)"}
+                    except Exception as re:
+                        traceback.print_exc(file=sys.stderr)
+                        return {"error": f"{e} (additionally, reconnect failed: {re})"}
                 return {"error": str(e)}
 
     # --- Coordinate helpers ---
@@ -153,11 +196,37 @@ class VNCController:
 
     # --- Actions ---
 
+    def _resolve_key(self, text):
+        """Resolve key aliases and validate key names.
+
+        Returns resolved key string or raises ValueError.
+        """
+        from vncdotool.client import KEYMAP
+
+        parts = text.split("-")
+        resolved = []
+        for part in parts:
+            lower = part.lower()
+            if lower in KEY_ALIASES:
+                resolved.append(KEY_ALIASES[lower])
+            elif lower in KEYMAP:
+                resolved.append(lower)
+            elif len(part) == 1:
+                resolved.append(part)
+            else:
+                valid_keys = sorted(set(list(KEY_ALIASES.keys()) + list(KEYMAP.keys())))
+                raise ValueError(
+                    f"Unknown key: '{part}'. "
+                    f"Valid keys include: {', '.join(valid_keys[:30])}..."
+                )
+        return "-".join(resolved)
+
     def _do_key(self, req):
         text = req.get("text")
         if not text:
             return {"error": "text required for key"}
-        self.client.keyPress(text)
+        resolved = self._resolve_key(text)
+        self.client.keyPress(resolved)
         return {"ok": True}
 
     def _do_type(self, req):
