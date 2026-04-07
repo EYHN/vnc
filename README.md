@@ -13,7 +13,7 @@ pip install vnc-computer-use
 To add VNC desktop control as a skill for [Claude Code](https://claude.ai/claude-code):
 
 ```bash
-npx skills install EYHN/vnc
+npx skills add EYHN/vnc
 ```
 
 This installs the `/vnc` skill, which teaches Claude how to connect to VNC servers, take screenshots, click, type, and interact with remote desktops autonomously.
