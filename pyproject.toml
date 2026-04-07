@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vnc-computer-use"
+version = "0.1.0"
+description = "VNC Computer-Use CLI - control a remote desktop via VNC for AI computer-use agents"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "EYHN" },
+]
+keywords = ["vnc", "computer-use", "remote-desktop", "automation", "ai"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Networking",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "vncdotool>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/EYHN/vnc-computer-use"
+Repository = "https://github.com/EYHN/vnc-computer-use"
+Issues = "https://github.com/EYHN/vnc-computer-use/issues"
+
+[project.scripts]
+vnc = "vnc_computer_use.cli:main"

@@ -31,7 +31,6 @@ import sys
 import time
 
 DEFAULT_SESSION = "default"
-DAEMON_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vnc_daemon.py")
 SOCKET_TIMEOUT = 60  # seconds
 
 ACTION_DESCRIPTIONS = """\
@@ -122,7 +121,8 @@ def cmd_connect(args):
             if os.path.exists(socket_path):
                 os.unlink(socket_path)
 
-    cmd = [sys.executable, DAEMON_SCRIPT, args.host, "--session", session]
+    daemon_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daemon.py")
+    cmd = [sys.executable, daemon_script, args.host, "--session", session]
     if args.password:
         cmd += ["--password", args.password]
     if args.username:
@@ -185,7 +185,7 @@ def cmd_disconnect(args):
 
 
 def cmd_action(args):
-    """Unified action handler — mirrors the computer-use tool interface."""
+    """Unified action handler -- mirrors the computer-use tool interface."""
     action = args.action
     req = {"action": action}
 
@@ -241,69 +241,6 @@ def cmd_action(args):
     print(json.dumps(resp))
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        prog="vnc",
-        description=__doc__,
-        epilog=ACTION_DESCRIPTIONS,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("--session", "-s", default=DEFAULT_SESSION,
-                        help=f"Session name for multi-connection support (default: {DEFAULT_SESSION})")
-    sub = parser.add_subparsers(dest="command")
-
-    # connect
-    p = sub.add_parser("connect", help="Connect to VNC server and start daemon")
-    p.add_argument("host", help="VNC host (e.g. localhost::5900 or localhost:0)")
-    p.add_argument("--password", "-p", help="VNC password")
-    p.add_argument("--username", "-u", help="VNC/ARD username (required for macOS Screen Sharing)")
-
-    # disconnect
-    sub.add_parser("disconnect", help="Stop VNC daemon")
-
-    # All computer-use actions share the same interface
-    actions = [
-        "key", "type", "mouse_move",
-        "left_click", "left_click_drag", "right_click",
-        "middle_click", "double_click", "scroll",
-        "get_screenshot", "get_cursor_position",
-        "get_screen_size", "status",
-    ]
-
-    for action in actions:
-        p = sub.add_parser(action)
-        p.add_argument("--coordinate", "-c", type=int, nargs=2, metavar=("X", "Y"),
-                        help="(x, y) pixel coordinate on the screen")
-        p.add_argument("--text", "-t", help="Text to type, key name, or scroll direction")
-        if action == "get_screenshot":
-            p.add_argument("--output", "-o", help="Output file path (default: base64 JSON to stdout)")
-
-    args = parser.parse_args()
-
-    if not args.command:
-        parser.print_help()
-        sys.exit(1)
-
-    if args.command == "connect":
-        cmd_connect(args)
-    elif args.command == "disconnect":
-        cmd_disconnect(args)
-    else:
-        args.action = args.command
-        # Allow positional shorthand: vnc key enter, vnc type "hello", vnc left_click 100 200
-        # by re-parsing with positional fallbacks
-        cmd_action(args)
-
-
-# --- Positional convenience parsing ---
-# Supports both explicit (--text, --coordinate) and positional shorthand:
-#   vnc key enter
-#   vnc type "hello world"
-#   vnc left_click 100 200
-#   vnc mouse_move 100 200
-#   vnc scroll down:5 100 200
-#   vnc get_screenshot -o file.png
-
 def _rewrite_argv():
     """Rewrite sys.argv to map positional shorthand to --text / --coordinate flags."""
     argv = sys.argv[1:]
@@ -348,7 +285,7 @@ def _rewrite_argv():
     optional_coord_actions = {"left_click", "right_click", "middle_click", "double_click"}
     scroll_action = {"scroll"}
 
-    # Already has flags — don't rewrite
+    # Already has flags -- don't rewrite
     if any(a.startswith("-") for a in action_args if a not in ("-o", "--output")):
         return
 
@@ -422,7 +359,59 @@ def _rewrite_argv():
     sys.argv = [sys.argv[0]] + new_args
 
 
-_rewrite_argv()
+def main():
+    _rewrite_argv()
+
+    parser = argparse.ArgumentParser(
+        prog="vnc",
+        description=__doc__,
+        epilog=ACTION_DESCRIPTIONS,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--session", "-s", default=DEFAULT_SESSION,
+                        help=f"Session name for multi-connection support (default: {DEFAULT_SESSION})")
+    sub = parser.add_subparsers(dest="command")
+
+    # connect
+    p = sub.add_parser("connect", help="Connect to VNC server and start daemon")
+    p.add_argument("host", help="VNC host (e.g. localhost::5900 or localhost:0)")
+    p.add_argument("--password", "-p", help="VNC password")
+    p.add_argument("--username", "-u", help="VNC/ARD username (required for macOS Screen Sharing)")
+
+    # disconnect
+    sub.add_parser("disconnect", help="Stop VNC daemon")
+
+    # All computer-use actions share the same interface
+    actions = [
+        "key", "type", "mouse_move",
+        "left_click", "left_click_drag", "right_click",
+        "middle_click", "double_click", "scroll",
+        "get_screenshot", "get_cursor_position",
+        "get_screen_size", "status",
+    ]
+
+    for action in actions:
+        p = sub.add_parser(action)
+        p.add_argument("--coordinate", "-c", type=int, nargs=2, metavar=("X", "Y"),
+                        help="(x, y) pixel coordinate on the screen")
+        p.add_argument("--text", "-t", help="Text to type, key name, or scroll direction")
+        if action == "get_screenshot":
+            p.add_argument("--output", "-o", help="Output file path (default: base64 JSON to stdout)")
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
+    if args.command == "connect":
+        cmd_connect(args)
+    elif args.command == "disconnect":
+        cmd_disconnect(args)
+    else:
+        args.action = args.command
+        cmd_action(args)
+
 
 if __name__ == "__main__":
     main()
