@@ -225,17 +225,19 @@ def cmd_action(args):
 
     # Handle screenshot output
     if action == "get_screenshot" and resp.get("ok"):
+        img_w = resp.get("image_width")
+        img_h = resp.get("image_height")
         if "path" in resp:
-            print(json.dumps({"ok": True, "path": resp["path"]}))
+            print(json.dumps({"ok": True, "path": resp["path"], "image_width": img_w, "image_height": img_h}))
         elif "data" in resp:
             if args.output:
                 png_data = base64.b64decode(resp["data"])
                 output = os.path.abspath(args.output)
                 with open(output, "wb") as f:
                     f.write(png_data)
-                print(json.dumps({"ok": True, "path": output}))
+                print(json.dumps({"ok": True, "path": output, "image_width": img_w, "image_height": img_h}))
             else:
-                print(json.dumps({"ok": True, "format": "png", "data": resp["data"]}))
+                print(json.dumps({"ok": True, "format": "png", "data": resp["data"], "image_width": img_w, "image_height": img_h}))
         return
 
     print(json.dumps(resp))

@@ -2,6 +2,7 @@
 """VNC CLI Daemon - maintains VNC connection and serves commands over Unix socket."""
 
 import json
+import math
 import os
 import signal
 import socketserver
@@ -9,10 +10,20 @@ import sys
 import tempfile
 import time
 import base64
+import io
 import threading
 import traceback
 
 DEFAULT_SESSION = "default"
+
+# Claude API automatically downsamples images larger than these limits.
+# We pre-downscale and report image dimensions so the agent uses correct coordinates.
+# See: https://docs.anthropic.com/en/docs/build-with-claude/vision#evaluate-image-size
+MAX_LONG_EDGE = 1568
+MAX_PIXELS = 1.15 * 1024 * 1024  # 1.15 megapixels
+
+# Delay before taking screenshot to let UI render
+SCREENSHOT_DELAY = 1.0  # seconds
 
 
 def session_socket_path(session):
@@ -30,8 +41,38 @@ def session_log_file(session):
 PASTE_THRESHOLD = 32
 
 
+def _get_api_scale(width, height):
+    """Calculate scale factor to fit image within Claude API limits.
+
+    Returns a value <= 1 representing how much to shrink the image.
+    """
+    long_edge = max(width, height)
+    total_pixels = width * height
+
+    long_edge_scale = MAX_LONG_EDGE / long_edge if long_edge > MAX_LONG_EDGE else 1.0
+    pixel_scale = math.sqrt(MAX_PIXELS / total_pixels) if total_pixels > MAX_PIXELS else 1.0
+
+    return min(long_edge_scale, pixel_scale)
+
+
+def _draw_crosshair(image, x, y, size=20, color=(255, 0, 0), thickness=3):
+    """Draw a crosshair on a PIL Image at (x, y)."""
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(image)
+    w, h = image.size
+    half_t = thickness // 2
+    # Horizontal line
+    x0 = max(0, x - size)
+    x1 = min(w - 1, x + size)
+    draw.rectangle([x0, y - half_t, x1, y + half_t], fill=color)
+    # Vertical line
+    y0 = max(0, y - size)
+    y1 = min(h - 1, y + size)
+    draw.rectangle([x - half_t, y0, x + half_t, y1], fill=color)
+
+
 class VNCController:
-    """Wraps vncdotool client with local cursor tracking."""
+    """Wraps vncdotool client with local cursor tracking and coordinate scaling."""
 
     def __init__(self, host, password=None, username=None, session=DEFAULT_SESSION):
         import vncdotool.api
@@ -42,6 +83,8 @@ class VNCController:
         self.host = host
         self.session = session
         self._lock = threading.Lock()
+        # Scale factor: image_coords * _api_to_screen_scale = screen_coords
+        self._api_to_screen_scale = 1.0
 
     def shutdown(self):
         try:
@@ -64,6 +107,51 @@ class VNCController:
             except Exception as e:
                 traceback.print_exc(file=sys.stderr)
                 return {"error": str(e)}
+
+    # --- Coordinate helpers ---
+
+    def _get_screen_size(self):
+        """Return (width, height) of the VNC screen."""
+        self.client.refreshScreen()
+        return self.client.screen.size
+
+    def _to_screen_coords(self, x, y):
+        """Convert API image coordinates to screen coordinates."""
+        scale = self._api_to_screen_scale
+        return round(x * scale), round(y * scale)
+
+    def _to_image_coords(self, x, y):
+        """Convert screen coordinates to API image coordinates."""
+        scale = self._api_to_screen_scale
+        if scale == 0:
+            return x, y
+        return round(x / scale), round(y / scale)
+
+    def _require_coords(self, req):
+        x = req.get("x")
+        y = req.get("y")
+        if x is None or y is None:
+            raise ValueError("x and y coordinates required")
+        sx, sy = self._to_screen_coords(int(x), int(y))
+        self._validate_coords(sx, sy)
+        return sx, sy
+
+    def _optional_coords(self, req):
+        x = req.get("x")
+        y = req.get("y")
+        if x is not None and y is not None:
+            sx, sy = self._to_screen_coords(int(x), int(y))
+            self._validate_coords(sx, sy)
+            return sx, sy
+        return None, None
+
+    def _validate_coords(self, x, y):
+        """Raise if coordinates are outside screen bounds."""
+        w, h = self._get_screen_size()
+        if x < 0 or x >= w or y < 0 or y >= h:
+            raise ValueError(f"Coordinates ({x}, {y}) are outside display bounds of {w}x{h}")
+
+    # --- Actions ---
 
     def _do_key(self, req):
         text = req.get("text")
@@ -155,32 +243,72 @@ class VNCController:
         return {"ok": True}
 
     def _do_get_screenshot(self, req):
+        from PIL import Image
+
         output = req.get("output")
-        if output:
-            # Write directly to the requested file path
-            self.client.captureScreen(output)
-            return {"ok": True, "path": output}
-        else:
-            # Fallback: return base64 via socket
-            tmpfile = os.path.join(tempfile.gettempdir(), f"vnc-screenshot-{os.getpid()}.png")
+
+        # Wait for UI to settle before capturing
+        time.sleep(SCREENSHOT_DELAY)
+
+        # Capture screen to PIL Image
+        self.client.refreshScreen()
+        screen_w, screen_h = self.client.screen.size
+
+        tmpfile = os.path.join(tempfile.gettempdir(), f"vnc-screenshot-{os.getpid()}.png")
+        try:
+            self.client.captureScreen(tmpfile)
+            image = Image.open(tmpfile)
+        finally:
             try:
-                self.client.captureScreen(tmpfile)
-                with open(tmpfile, "rb") as f:
-                    data = base64.b64encode(f.read()).decode("ascii")
-                return {"ok": True, "data": data, "format": "png"}
-            finally:
-                try:
-                    os.unlink(tmpfile)
-                except OSError:
-                    pass
+                os.unlink(tmpfile)
+            except OSError:
+                pass
+
+        # Calculate downscale factor and update coordinate mapping
+        api_scale = _get_api_scale(screen_w, screen_h)
+        self._api_to_screen_scale = 1.0 / api_scale
+
+        if api_scale < 1.0:
+            new_w = int(screen_w * api_scale)
+            new_h = int(screen_h * api_scale)
+            image = image.resize((new_w, new_h), Image.LANCZOS)
+
+        # Draw crosshair at cursor position (in image coordinates)
+        cursor_img_x, cursor_img_y = self._to_image_coords(self.cursor_x, self.cursor_y)
+        img_w, img_h = image.size
+        if 0 <= cursor_img_x < img_w and 0 <= cursor_img_y < img_h:
+            _draw_crosshair(image, cursor_img_x, cursor_img_y)
+
+        # Encode result
+        buf = io.BytesIO()
+        image.save(buf, format="PNG", optimize=True)
+        png_bytes = buf.getvalue()
+
+        result_w, result_h = image.size
+
+        if output:
+            with open(output, "wb") as f:
+                f.write(png_bytes)
+            return {"ok": True, "path": output, "image_width": result_w, "image_height": result_h}
+        else:
+            data = base64.b64encode(png_bytes).decode("ascii")
+            return {"ok": True, "data": data, "format": "png", "image_width": result_w, "image_height": result_h}
 
     def _do_get_cursor_position(self, req):
-        return {"ok": True, "x": self.cursor_x, "y": self.cursor_y}
+        # Return cursor position in API image coordinates
+        img_x, img_y = self._to_image_coords(self.cursor_x, self.cursor_y)
+        return {"ok": True, "x": img_x, "y": img_y}
 
     def _do_get_screen_size(self, req):
         self.client.refreshScreen()
-        screen = self.client.screen
-        return {"ok": True, "width": screen.size[0], "height": screen.size[1]}
+        screen_w, screen_h = self.client.screen.size
+        # Return the image dimensions the agent should use for coordinates
+        api_scale = _get_api_scale(screen_w, screen_h)
+        return {
+            "ok": True,
+            "width": int(screen_w * api_scale),
+            "height": int(screen_h * api_scale),
+        }
 
     def _do_status(self, req):
         return {
@@ -191,20 +319,6 @@ class VNCController:
             "cursor_x": self.cursor_x,
             "cursor_y": self.cursor_y,
         }
-
-    def _require_coords(self, req):
-        x = req.get("x")
-        y = req.get("y")
-        if x is None or y is None:
-            raise ValueError("x and y coordinates required")
-        return int(x), int(y)
-
-    def _optional_coords(self, req):
-        x = req.get("x")
-        y = req.get("y")
-        if x is not None and y is not None:
-            return int(x), int(y)
-        return None, None
 
 
 class RequestHandler(socketserver.StreamRequestHandler):

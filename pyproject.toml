@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vnc-computer-use"
-version = "0.1.0"
+version = "0.2.0"
 description = "VNC Computer-Use CLI - control a remote desktop via VNC for AI computer-use agents"
 readme = "README.md"
 license = "MIT"
@@ -29,6 +29,7 @@ classifiers = [
 ]
 dependencies = [
     "vncdotool>=1.0.0",
+    "Pillow>=9.0.0",
 ]
 
 [project.urls]
