@@ -37,9 +37,6 @@ def session_pid_file(session):
 def session_log_file(session):
     return f"/tmp/vnc-cli-{session}.log"
 
-# Threshold: texts shorter than this use keyPress; longer use paste()
-PASTE_THRESHOLD = 32
-
 # macOS-friendly key aliases → X11 keysym names understood by vncdotool
 KEY_ALIASES = {
     "cmd": "lsuper",
@@ -233,10 +230,14 @@ class VNCController:
         text = req.get("text")
         if not text:
             return {"error": "text required for type"}
-        if len(text) >= PASTE_THRESHOLD:
-            self.client.paste(text)
-        else:
-            for char in text:
+        for char in text:
+            if char == "\n":
+                self.client.keyPress("enter")
+            elif char == "\t":
+                self.client.keyPress("tab")
+            elif char == "\r":
+                continue
+            else:
                 self.client.keyPress(char)
         return {"ok": True}
 
