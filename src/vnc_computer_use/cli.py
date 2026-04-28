@@ -38,7 +38,7 @@ Available actions:
   key              Press a key or key-combination on the keyboard.
                    Examples: "enter", "tab", "ctrl-c", "alt-f4", "shift-a"
   type             Type a string of text on the keyboard. Short text is typed
-                   character by character; long text uses clipboard paste.
+                   character by character for reliability.
   mouse_move       Move the cursor to a specified (x, y) coordinate.
   left_click       Click the left mouse button. Optionally move to (x, y) first.
   left_click_drag  Click and drag the cursor to a specified (x, y) coordinate.

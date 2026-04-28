@@ -40,6 +40,9 @@ vnc key enter
 vnc key ctrl-c
 vnc type "hello world"
 
+# `vnc type` sends key events instead of using the remote clipboard.
+# This is slower for long strings but does not depend on VNC clipboard sync.
+
 # Mouse
 vnc left_click 100 200
 vnc right_click 300 400

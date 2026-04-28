@@ -61,7 +61,7 @@ vnc scroll <direction> <x> <y>  # direction: up, down, left, right, or down:500
 
 ```bash
 vnc key <key>          # e.g. enter, tab, ctrl-c, alt-f4, shift-a
-vnc type "<text>"      # type a string (short: keypress, long: clipboard paste)
+vnc type "<text>"      # type a string character-by-character
 ```
 
 ### Info
