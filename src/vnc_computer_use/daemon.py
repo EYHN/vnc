@@ -84,11 +84,18 @@ def _draw_crosshair(image, x, y, size=20, color=(255, 0, 0), thickness=3):
 class VNCController:
     """Wraps vncdotool client with local cursor tracking and coordinate scaling."""
 
-    def __init__(self, host, password=None, username=None, session=DEFAULT_SESSION):
+    def __init__(self, host, password=None, username=None, session=DEFAULT_SESSION, legacy_auth=False):
         import vncdotool.api
         self._api = vncdotool.api
+        if legacy_auth:
+            # macOS Screen Sharing often advertises Apple/DH auth before classic
+            # VNC auth. vncdotool may pick DH and then hang or fail for legacy
+            # password-only sessions, so force classic VNC auth when requested.
+            from vncdotool.rfb import AuthTypes, RFBClient
+            RFBClient.SUPPORTED_AUTHS = {AuthTypes.NONE, AuthTypes.VNC_AUTHENTICATION}
         self._password = password
         self._username = username
+        self._legacy_auth = legacy_auth
         self.client = self._api.connect(host, password=password, username=username)
         self.cursor_x = 0
         self.cursor_y = 0
@@ -449,9 +456,11 @@ def main():
         os.unlink(socket_path)
 
     # Connect to VNC
+    legacy_auth = "--legacy-auth" in sys.argv
+
     print(f"[{session}] Connecting to VNC at {host}...", file=sys.stderr)
     try:
-        controller = VNCController(host, password=password, username=username, session=session)
+        controller = VNCController(host, password=password, username=username, session=session, legacy_auth=legacy_auth)
     except Exception as e:
         print(f"[{session}] Failed to connect to VNC: {e}", file=sys.stderr)
         sys.exit(1)

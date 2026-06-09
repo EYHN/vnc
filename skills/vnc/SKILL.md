@@ -25,6 +25,7 @@ pip install vnc-computer-use
 vnc connect <host>::<port>
 vnc connect <host>::<port> --password <pw>
 vnc connect <host>::<port> --username <user> --password <pw>  # macOS Screen Sharing
+vnc connect <host>::<port> --password <pw> --legacy-auth       # macOS legacy VNC password
 
 # Disconnect
 vnc disconnect
@@ -103,6 +104,7 @@ Screenshots include a **red crosshair** marking the current cursor position. Use
 
 ## Usage Guidelines
 
+- For macOS mini-machine legacy VNC passwords, use `--legacy-auth` when connecting; otherwise vncdotool may choose Apple/DH auth and hang or fail.
 - **Always take a screenshot first** before clicking — you need to see where elements are on screen.
 - **Prefer keyboard shortcuts** over clicking when possible (faster and more reliable).
 - **Click center of elements** — don't click edges of buttons or icons.

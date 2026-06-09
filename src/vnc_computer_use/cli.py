@@ -127,6 +127,8 @@ def cmd_connect(args):
         cmd += ["--password", args.password]
     if args.username:
         cmd += ["--username", args.username]
+    if args.legacy_auth:
+        cmd += ["--legacy-auth"]
 
     with open(log_file, "w") as log:
         proc = subprocess.Popen(cmd, stdout=log, stderr=log, start_new_session=True)
@@ -379,6 +381,7 @@ def main():
     p.add_argument("host", help="VNC host (e.g. localhost::5900 or localhost:0)")
     p.add_argument("--password", "-p", help="VNC password")
     p.add_argument("--username", "-u", help="VNC/ARD username (required for macOS Screen Sharing)")
+    p.add_argument("--legacy-auth", action="store_true", help="Force classic VNC password auth (useful for macOS legacy VNC password)")
 
     # disconnect
     sub.add_parser("disconnect", help="Stop VNC daemon")
